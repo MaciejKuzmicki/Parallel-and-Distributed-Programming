@@ -29,7 +29,6 @@ int main(int argc, char** argv) {
 	if(numberOfPrimeNumbers <= 0 || numberOfProcesses <= 0) {
 		printf("Illegal arguments");
 		return EXIT_FAILURE;
-
 	}
 
     if(numberOfProcesses > numberOfPrimeNumbers) {
@@ -42,7 +41,9 @@ int main(int argc, char** argv) {
 		printf("Failed to allocate memory\n");
 		return EXIT_FAILURE;
 	}
+
     writePrimeNumbersToFile(primeNumbers, numberOfPrimeNumbers, path);
+
     sigset_t mask;
 
     struct sigaction usr1;
@@ -51,6 +52,7 @@ int main(int argc, char** argv) {
     usr1.sa_mask = mask;
     usr1.sa_flags = 0;
     sigaction(SIGUSR1, &usr1, NULL);
+
     int size = (numberOfProcesses+1) * sizeof(long long int);
     
     long long int *shared = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -62,6 +64,7 @@ int main(int argc, char** argv) {
 
 	pid_t pid;
     pid_t childPidNumbers[numberOfProcesses];
+
     int index;
 
     for(index = 0; index < numberOfProcesses; index++) {
@@ -74,31 +77,35 @@ int main(int argc, char** argv) {
 			pause();
 			break;
 		}
-		else childPidNumbers[index] = pid;
+		else {
+			childPidNumbers[index] = pid;
+		}
     }
 	
-
     if(pid == 0) {
     	calculate_partial_sum(index, primeNumbers, shared, numberOfPrimeNumbers, numberOfProcesses);
     }
     else {
+		sleep(1);
 		clock_t start = clock();
+
     	for(int i = 0; i < numberOfProcesses; i++) {
 			kill(childPidNumbers[i], SIGUSR1);
-
 		}
+
 		for(int i = 0; i < numberOfProcesses; i++) {
 			waitpid(childPidNumbers[i], NULL, 0);
 		}
+
 		clock_t end = clock();
 		double cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 		long long int totalSum = 0;
+
 		for(int i = 0; i < numberOfProcesses; i++) {
 			totalSum += shared[i];
 		}
 		printf("Total sum of prime numbers: %lld\n", totalSum);
 		printf("Child processes executed in: %f seconds\n", cpu_time_used);
-
 		if (munmap(shared, size) == -1) {
             printf("Failed to unmap");
         }
@@ -119,7 +126,7 @@ void calculate_partial_sum(int id, int *primeNumbers, long long int* shared, int
 	if(id == numberOfProcesses -1) {
 		end += numberOfPrimes % numberOfProcesses;
 	}
-	int sum = 0;
+	long long int sum = 0;
 	for(int i = start; i < end; i++) {
 		sum += primeNumbers[i];
 	}
