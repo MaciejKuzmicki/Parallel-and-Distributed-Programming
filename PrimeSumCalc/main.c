@@ -10,7 +10,8 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <sys/mman.h>
-
+#include <string.h>
+#include <sys/time.h>
 
 void on_usr1(int signal);
 
@@ -22,12 +23,13 @@ void calculate_partial_sum(int id, int *primeNumbers, long long int* shared, int
 
 
 int main(int argc, char** argv) {
+
     int numberOfProcesses = argc > 1 ? atoi(argv[1]) : 2;
     int numberOfPrimeNumbers = argc > 2 ? atoi(argv[2]) : 10;
     char *path = argc > 3 ? argv[3] : "primeNumbers.txt";
 
 	if(numberOfPrimeNumbers <= 0 || numberOfProcesses <= 0) {
-		printf("Illegal arguments");
+		printf("Illegal arguments\n");
 		return EXIT_FAILURE;
 	}
 
@@ -37,6 +39,7 @@ int main(int argc, char** argv) {
     }
 	
 	int *primeNumbers = generatePrimes(numberOfPrimeNumbers);
+
     if(primeNumbers == NULL) {
 		printf("Failed to allocate memory\n");
 		return EXIT_FAILURE;
@@ -45,7 +48,6 @@ int main(int argc, char** argv) {
     writePrimeNumbersToFile(primeNumbers, numberOfPrimeNumbers, path);
 
     sigset_t mask;
-
     struct sigaction usr1;
     sigemptyset(&mask);
     usr1.sa_handler = (&on_usr1);
@@ -67,6 +69,8 @@ int main(int argc, char** argv) {
 
     int index;
 
+	clock_t start = clock();
+
     for(index = 0; index < numberOfProcesses; index++) {
 		pid = fork();
 		if(pid < 0) {
@@ -87,7 +91,6 @@ int main(int argc, char** argv) {
     }
     else {
 		sleep(1);
-		clock_t start = clock();
 
     	for(int i = 0; i < numberOfProcesses; i++) {
 			kill(childPidNumbers[i], SIGUSR1);
@@ -98,14 +101,19 @@ int main(int argc, char** argv) {
 		}
 
 		clock_t end = clock();
+
 		double cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
 		long long int totalSum = 0;
 
 		for(int i = 0; i < numberOfProcesses; i++) {
 			totalSum += shared[i];
 		}
+		
 		printf("Total sum of prime numbers: %lld\n", totalSum);
+
 		printf("Child processes executed in: %f seconds\n", cpu_time_used);
+
 		if (munmap(shared, size) == -1) {
             printf("Failed to unmap");
         }
@@ -123,50 +131,70 @@ void on_usr1(int signal) {
 void calculate_partial_sum(int id, int *primeNumbers, long long int* shared, int numberOfPrimes, int numberOfProcesses){
 	int start = id * (numberOfPrimes/numberOfProcesses);
 	int end = (id+1) * (numberOfPrimes/numberOfProcesses);
+
 	if(id == numberOfProcesses -1) {
 		end += numberOfPrimes % numberOfProcesses;
 	}
+
 	long long int sum = 0;
+
 	for(int i = start; i < end; i++) {
 		sum += primeNumbers[i];
 	}
+
 	shared[id] = sum;
 }
 
 int* generatePrimes(int n) {
-	int *primeNumbers = (int*)malloc(n*sizeof(int));
-	if(primeNumbers == NULL) {
+	int upperBound = (n > 6) ? (int)(1.2 * n * (log(n) + log(log(n)))) : 15;
+    bool* isPrime = malloc((upperBound+1) * sizeof(bool));
+    int* primeNumbers = malloc((upperBound+1) * sizeof(int));
+
+	if(isPrime == NULL || primeNumbers == NULL) {
+		free(isPrime);
+		free(primeNumbers);
 		return NULL;
 	}
-	primeNumbers[0] = 2;
-	int curr = 3;
-	int index = 1;
-	while( index < n) {
-		bool isPrime = true;
-		int limit = sqrt(curr);
-		for(int i =2; i <= limit; i++) {
-			if(curr % i == 0) {
-				isPrime = false;
-				break;
-			}
-		}
-		if(isPrime) {
-			primeNumbers[index++] = curr;
-		}
-		curr+=2;
-	}
-	return primeNumbers;
+
+    int count = 0;
+
+    for (int i = 2; i <= upperBound; i++) {
+        isPrime[i] = true;
+    }
+
+    for (int i = 2; i <= sqrt(upperBound); i++) {
+        if (isPrime[i]) {
+            for (int j = i * i; j <= upperBound; j += i) {
+                isPrime[j] = false;
+            }
+        }
+    }
+
+    for (int i = 2; i <= upperBound && count < n; i++) {
+        if (isPrime[i]) {
+            primeNumbers[count++] = i;
+        }
+    }
+
+	if(count < n) printf("Failed to find %d prime numbers\n", n);
+
+    free(isPrime);
+
+    return primeNumbers;
 }
 
 void writePrimeNumbersToFile(int *primeNumbers, int size, char *path) {
 	FILE *f = fopen(path, "w+");
+
 	if(f == NULL) {
 		printf("Problem with the file occured\n");
 		return;
 	}
+
 	for(int i = 0; i < size; i++) {
 		fprintf(f, "%d ", primeNumbers[i]);
 	}
+	
 	fclose(f);
 }
 
